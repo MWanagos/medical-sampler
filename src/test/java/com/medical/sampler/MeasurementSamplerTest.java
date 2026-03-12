@@ -33,8 +33,7 @@ class MeasurementSamplerTest {
 
     private static final int FIVE_MINUTES_SECONDS = 5 * 60;
 
-    private static List<Measurement> nMeasurementsInOneInterval(
-            Instant base, MeasurementType type, int count) {
+    private static List<Measurement> nMeasurementsInOneInterval(Instant base, MeasurementType type, int count) {
         return IntStream.rangeClosed(1, count)
                 .mapToObj(i -> new Measurement(base.plusSeconds(i % FIVE_MINUTES_SECONDS), (double) i, type))
                 .toList();
