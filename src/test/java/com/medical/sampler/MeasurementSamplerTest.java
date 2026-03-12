@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.List;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import static com.medical.sampler.MeasurementType.HEART_RATE;
 import static com.medical.sampler.MeasurementType.SPO2;
 import static com.medical.sampler.MeasurementType.TEMPERATURE;
@@ -21,8 +23,6 @@ class MeasurementSamplerTest {
         sampler = new MeasurementSampler();
     }
 
-    // ── Helpers ────────────────────────────────────────────────────────────────
-
     private static Instant at(String time) {
         return Instant.parse("2026-03-12T" + time + "Z");
     }
@@ -31,7 +31,14 @@ class MeasurementSamplerTest {
         return new Measurement(at(time), value, type);
     }
 
-    // ── Tests ──────────────────────────────────────────────────────────────────
+    private static final int FIVE_MINUTES_SECONDS = 5 * 60;
+
+    private static List<Measurement> nMeasurementsInOneInterval(
+            Instant base, MeasurementType type, int count) {
+        return IntStream.rangeClosed(1, count)
+                .mapToObj(i -> new Measurement(base.plusSeconds(i % FIVE_MINUTES_SECONDS), (double) i, type))
+                .toList();
+    }
 
     @Nested
     @DisplayName("given the example from the specification")
@@ -305,6 +312,238 @@ class MeasurementSamplerTest {
 
             // then
             assertThat(temps).containsExactly(m("10:03:00", TEMPERATURE, 38.0));
+        }
+
+        @Test
+        @DisplayName("large number of measurements in one interval: only the latest survives")
+        void largeNumberOfMeasurementsInOneIntervalOnlyLatestSurvives() {
+            // given
+            var start = at("10:00:00");
+            var noise = nMeasurementsInOneInterval(start, TEMPERATURE, 10_000);
+            var latest = new Measurement(start.plusSeconds(FIVE_MINUTES_SECONDS), 999.9, TEMPERATURE);
+            var input = Stream.concat(noise.stream(), Stream.of(latest)).toList();
+
+            // when
+            var temps = sampler.sample(start, input).get(TEMPERATURE);
+
+            // then
+            assertThat(temps).containsExactly(latest);
+        }
+
+        @Test
+        @DisplayName("measurements with null value are stored as-is (value is not interpreted)")
+        void nullMeasurementValueIsStoredAsIs() {
+            // given
+            var start = at("10:00:00");
+            var input = List.of(
+                    new Measurement(at("10:02:00"), null, TEMPERATURE)
+            );
+
+            // when
+            var temps = sampler.sample(start, input).get(TEMPERATURE);
+
+            // then
+            assertThat(temps).hasSize(1);
+            assertThat(temps.getFirst().measurementValue()).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("grid boundary coverage")
+    class GridBoundaryCoverage {
+
+        @Test
+        @DisplayName("single measurement exactly on each of several grid boundaries is kept per interval")
+        void singleMeasurementOnEachGridBoundaryIsKeptPerInterval() {
+            // given
+            var start = at("10:00:00");
+            var input = List.of(
+                    m("10:05:00", SPO2, 91.0),
+                    m("10:10:00", SPO2, 92.0),
+                    m("10:15:00", SPO2, 93.0)
+            );
+
+            // when
+            var spo2 = sampler.sample(start, input).get(SPO2);
+
+            // then
+            assertThat(spo2).containsExactly(
+                    m("10:05:00", SPO2, 91.0),
+                    m("10:10:00", SPO2, 92.0),
+                    m("10:15:00", SPO2, 93.0)
+            );
+        }
+    }
+
+    @Nested
+    @DisplayName("MergeStrategy variants")
+    class MergeStrategyVariants {
+
+        @Test
+        @DisplayName("MergeStrategy.last() keeps the measurement with the later timestamp")
+        void lastStrategyKeepsLaterTimestamp() {
+            // given
+            var lastSampler = new MeasurementSampler(MergeStrategy.last());
+            var start = at("10:00:00");
+            var input = List.of(
+                    m("10:01:00", TEMPERATURE, 36.0),
+                    m("10:04:00", TEMPERATURE, 37.0),
+                    m("10:02:00", TEMPERATURE, 35.0)
+            );
+
+            // when
+            var temps = lastSampler.sample(start, input).get(TEMPERATURE);
+
+            // then
+            assertThat(temps).containsExactly(m("10:04:00", TEMPERATURE, 37.0));
+        }
+
+        @Test
+        @DisplayName("MergeStrategy.first() keeps the measurement with the earlier timestamp")
+        void firstStrategyKeepsEarlierTimestamp() {
+            // given
+            var firstSampler = new MeasurementSampler(MergeStrategy.first());
+            var start = at("10:00:00");
+            var input = List.of(
+                    m("10:04:00", TEMPERATURE, 37.0),
+                    m("10:01:00", TEMPERATURE, 36.0),
+                    m("10:02:00", TEMPERATURE, 35.0)
+            );
+
+            // when
+            var temps = firstSampler.sample(start, input).get(TEMPERATURE);
+
+            // then
+            assertThat(temps).containsExactly(m("10:01:00", TEMPERATURE, 36.0));
+        }
+
+        @Test
+        @DisplayName("MergeStrategy.first() with duplicate timestamps keeps the first encountered")
+        void firstStrategyTieKeepsExisting() {
+            // given
+            var firstSampler = new MeasurementSampler(MergeStrategy.first());
+            var start = at("10:00:00");
+            var input = List.of(
+                    m("10:03:00", SPO2, 95.0),
+                    m("10:03:00", SPO2, 99.0)
+            );
+
+            // when
+            var spo2 = firstSampler.sample(start, input).get(SPO2);
+
+            // then
+            assertThat(spo2).hasSize(1);
+            assertThat(spo2.getFirst().measurementValue()).isEqualTo(95.0);
+        }
+
+        @Test
+        @DisplayName("MergeStrategy.average() returns the arithmetic mean of two values")
+        void averageStrategyReturnsMean() {
+            // given
+            var averageSampler = new MeasurementSampler(MergeStrategy.average());
+            var start = at("10:00:00");
+            var input = List.of(
+                    m("10:01:00", TEMPERATURE, 36.0),
+                    m("10:03:00", TEMPERATURE, 38.0)
+            );
+
+            // when
+            var temps = averageSampler.sample(start, input).get(TEMPERATURE);
+
+            // then
+            assertThat(temps).hasSize(1);
+            assertThat(temps.getFirst().measurementValue()).isEqualTo(37.0);
+        }
+
+        @Test
+        @DisplayName("MergeStrategy.average() uses the later timestamp for the result")
+        void averageStrategyUsesLaterTimestamp() {
+            // given
+            var averageSampler = new MeasurementSampler(MergeStrategy.average());
+            var start = at("10:00:00");
+            var input = List.of(
+                    m("10:01:00", TEMPERATURE, 36.0),
+                    m("10:03:00", TEMPERATURE, 38.0)
+            );
+
+            // when
+            var temps = averageSampler.sample(start, input).get(TEMPERATURE);
+
+            // then
+            assertThat(temps.getFirst().measurementTime()).isEqualTo(at("10:03:00"));
+        }
+
+        @Test
+        @DisplayName("MergeStrategy.average() accumulates correctly across three values in one interval")
+        void averageStrategyAccumulatesAcrossMultipleValues() {
+            // given
+            var averageSampler = new MeasurementSampler(MergeStrategy.average());
+            var start = at("10:00:00");
+
+            var input = List.of(
+                    m("10:01:00", TEMPERATURE, 36.0),
+                    m("10:02:00", TEMPERATURE, 38.0),
+                    m("10:03:00", TEMPERATURE, 37.0)
+            );
+
+            // when
+            var temps = averageSampler.sample(start, input).get(TEMPERATURE);
+
+            // then
+            assertThat(temps).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("MergeStrategy.average() across two intervals computes means independently")
+        void averageStrategyComputesMeansPerIntervalIndependently() {
+            // given
+            var averageSampler = new MeasurementSampler(MergeStrategy.average());
+            var start = at("10:00:00");
+            var input = List.of(
+                    m("10:01:00", TEMPERATURE, 30.0),
+                    m("10:03:00", TEMPERATURE, 40.0),
+                    m("10:06:00", TEMPERATURE, 20.0),
+                    m("10:08:00", TEMPERATURE, 60.0)
+            );
+
+            // when
+            var temps = averageSampler.sample(start, input).get(TEMPERATURE);
+
+            // then
+            assertThat(temps).hasSize(2);
+            assertThat(temps.get(0).measurementValue()).isEqualTo(35.0);
+            assertThat(temps.get(1).measurementValue()).isEqualTo(40.0);
+        }
+
+        @Test
+        @DisplayName("null mergeStrategy throws IllegalArgumentException")
+        void nullMergeStrategyThrows() {
+            // then
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    IllegalArgumentException.class,
+                    () -> new MeasurementSampler(null)
+            );
+        }
+
+        @Test
+        @DisplayName("custom lambda MergeStrategy (always higher value) is applied correctly")
+        void customLambdaMergeStrategyApplied() {
+            // given
+            MergeStrategy highest = (existing, candidate) ->
+                    candidate.measurementValue() > existing.measurementValue() ? candidate : existing;
+            var highValueSampler = new MeasurementSampler(highest);
+            var start = at("10:00:00");
+            var input = List.of(
+                    m("10:01:00", HEART_RATE, 55.0),
+                    m("10:04:00", HEART_RATE, 90.0),
+                    m("10:03:00", HEART_RATE, 70.0)
+            );
+
+            // when
+            var rates = highValueSampler.sample(start, input).get(HEART_RATE);
+
+            // then
+            assertThat(rates).containsExactly(m("10:04:00", HEART_RATE, 90.0));
         }
     }
 }

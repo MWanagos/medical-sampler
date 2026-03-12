@@ -14,6 +14,29 @@ public class MeasurementSampler {
 
     private static final long INTERVAL_SECONDS = 5 * 60L;
 
+    private final MergeStrategy mergeStrategy;
+
+    /**
+     * Creates a sampler that keeps the <em>last</em> value in every interval,
+     * matching the behaviour specified in the task description.
+     */
+    public MeasurementSampler() {
+        this(MergeStrategy.last());
+    }
+
+    /**
+     * Creates a sampler with an explicit merge strategy.
+     *
+     * @param mergeStrategy how to resolve two measurements competing for the
+     *                      same {@code (type, interval)} bucket; must not be {@code null}
+     */
+    public MeasurementSampler(MergeStrategy mergeStrategy) {
+        if (mergeStrategy == null) {
+            throw new IllegalArgumentException("mergeStrategy must not be null");
+        }
+        this.mergeStrategy = mergeStrategy;
+    }
+
     /**
      * Samples the given measurements to a 5-minute time grid.
      *
@@ -42,11 +65,11 @@ public class MeasurementSampler {
     }
 
     /**
-     * Groups measurements by type and interval, keeping only the latest per group.
+     * Groups measurements by type and interval, applying the merge strategy for conflicts.
      *
      * @param startOfSampling       the reference start time; measurements before this are discarded
      * @param unsampledMeasurements raw measurements in any order
-     * @return nested map: {@code type -> (intervalIndex -> latest measurement in that interval)}
+     * @return nested map: {@code type -> (intervalIndex -> representative measurement)}
      */
     private Map<MeasurementType, Map<Long, Measurement>> group(
             Instant startOfSampling,
@@ -64,7 +87,7 @@ public class MeasurementSampler {
 
             bestPerTypeAndInterval
                     .computeIfAbsent(measurement.type(), t -> new HashMap<>())
-                    .merge(intervalIndex, measurement, MeasurementSampler::keepLater);
+                    .merge(intervalIndex, measurement, mergeStrategy);
         }
 
         return bestPerTypeAndInterval;
@@ -86,19 +109,5 @@ public class MeasurementSampler {
         } else {
             return 0;
         }
-    }
-
-    /**
-     * Returns the measurement with the later timestamp.
-     * Used as a merge function when two measurements fall in the same interval.
-     *
-     * @param existing  the measurement already stored for the interval
-     * @param candidate the newly encountered measurement for the same interval
-     * @return {@code candidate} if its timestamp is strictly after {@code existing}; {@code existing} otherwise
-     */
-    private static Measurement keepLater(Measurement existing, Measurement candidate) {
-        return candidate.measurementTime().isAfter(existing.measurementTime())
-                ? candidate
-                : existing;
     }
 }
