@@ -6,6 +6,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Samples second-precision medical measurements onto a fixed 5-minute time grid.
@@ -55,8 +56,11 @@ public class MeasurementSampler {
 
         Map<MeasurementType, List<Measurement>> result = new EnumMap<>(MeasurementType.class);
 
+
         bestPerTypeAndInterval.forEach((type, intervalMap) ->
-                result.put(type, intervalMap.values().stream()
+                result.put(type, intervalMap.entrySet().stream()
+                        .collect(Collectors.toMap(Map.Entry::getKey,
+                                k -> new Measurement(startOfSampling.plusSeconds(INTERVAL_SECONDS * (k.getKey() + 1)), k.getValue().measurementValue(), k.getValue().type()))).values().stream()
                         .sorted(Comparator.comparing(Measurement::measurementTime))
                         .toList())
         );

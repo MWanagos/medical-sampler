@@ -64,14 +64,14 @@ class MeasurementSamplerTest {
             // then
             assertThat(result.get(TEMPERATURE))
                     .containsExactly(
-                            m("10:04:45", TEMPERATURE, 35.79),
-                            m("10:09:07", TEMPERATURE, 35.01)
+                            m("10:05:00", TEMPERATURE, 35.79),
+                            m("10:10:00", TEMPERATURE, 35.01)
                     );
 
             assertThat(result.get(SPO2))
                     .containsExactly(
                             m("10:05:00", SPO2, 97.17),
-                            m("10:05:01", SPO2, 95.08)
+                            m("10:10:00", SPO2, 95.08)
                     );
         }
     }
@@ -113,7 +113,7 @@ class MeasurementSamplerTest {
             // then
             assertThat(temps).containsExactly(
                     m("10:05:00", TEMPERATURE, 37.0),
-                    m("10:05:01", TEMPERATURE, 38.0)
+                    m("10:10:00", TEMPERATURE, 38.0)
             );
         }
 
@@ -131,7 +131,7 @@ class MeasurementSamplerTest {
             var rates = sampler.sample(start, input).get(HEART_RATE);
 
             // then
-            assertThat(rates).containsExactly(m("10:03:00", HEART_RATE, 75.0));
+            assertThat(rates).containsExactly(m("10:05:00", HEART_RATE, 75.0));
         }
     }
 
@@ -174,7 +174,7 @@ class MeasurementSamplerTest {
             var spo2 = sampler.sample(start, input).get(SPO2);
 
             // then
-            assertThat(spo2).containsExactly(m("10:04:59", SPO2, 97.0));
+            assertThat(spo2).containsExactly(m("10:05:00", SPO2, 97.0));
         }
     }
 
@@ -200,13 +200,13 @@ class MeasurementSamplerTest {
 
             // then
             assertThat(result.get(TEMPERATURE))
-                    .containsExactly(m("10:04:00", TEMPERATURE, 36.8));
+                    .containsExactly(m("10:05:00", TEMPERATURE, 36.8));
 
             assertThat(result.get(SPO2))
-                    .containsExactly(m("10:04:00", SPO2, 96.0));
+                    .containsExactly(m("10:05:00", SPO2, 96.0));
 
             assertThat(result.get(HEART_RATE))
-                    .containsExactly(m("10:06:00", HEART_RATE, 80.0));
+                    .containsExactly(m("10:10:00", HEART_RATE, 80.0));
         }
 
         @Test
@@ -252,7 +252,7 @@ class MeasurementSamplerTest {
             var result = sampler.sample(start, List.of(single));
 
             // then
-            assertThat(result.get(TEMPERATURE)).containsExactly(single);
+            assertThat(result.get(TEMPERATURE)).containsExactly(m("10:05:00", TEMPERATURE, 37.2));
         }
 
         @Test
@@ -291,7 +291,7 @@ class MeasurementSamplerTest {
             var spo2 = sampler.sample(start, input).get(SPO2);
 
             // then
-            assertThat(spo2).hasSize(1);
+            assertThat(spo2).hasSize(1).containsExactly(m("10:05:00", SPO2, 95.0));
         }
 
         @Test
@@ -310,7 +310,7 @@ class MeasurementSamplerTest {
             var temps = sampler.sample(start, input).get(TEMPERATURE);
 
             // then
-            assertThat(temps).containsExactly(m("10:03:00", TEMPERATURE, 38.0));
+            assertThat(temps).containsExactly(m("10:05:00", TEMPERATURE, 38.0));
         }
 
         @Test
@@ -394,7 +394,7 @@ class MeasurementSamplerTest {
             var temps = lastSampler.sample(start, input).get(TEMPERATURE);
 
             // then
-            assertThat(temps).containsExactly(m("10:04:00", TEMPERATURE, 37.0));
+            assertThat(temps).containsExactly(m("10:05:00", TEMPERATURE, 37.0));
         }
 
         @Test
@@ -413,7 +413,7 @@ class MeasurementSamplerTest {
             var temps = firstSampler.sample(start, input).get(TEMPERATURE);
 
             // then
-            assertThat(temps).containsExactly(m("10:01:00", TEMPERATURE, 36.0));
+            assertThat(temps).containsExactly(m("10:05:00", TEMPERATURE, 36.0));
         }
 
         @Test
@@ -469,7 +469,7 @@ class MeasurementSamplerTest {
             var temps = averageSampler.sample(start, input).get(TEMPERATURE);
 
             // then
-            assertThat(temps.getFirst().measurementTime()).isEqualTo(at("10:03:00"));
+            assertThat(temps.getFirst().measurementTime()).isEqualTo(at("10:05:00"));
         }
 
         @Test
@@ -542,7 +542,7 @@ class MeasurementSamplerTest {
             var rates = highValueSampler.sample(start, input).get(HEART_RATE);
 
             // then
-            assertThat(rates).containsExactly(m("10:04:00", HEART_RATE, 90.0));
+            assertThat(rates).containsExactly(m("10:05:00", HEART_RATE, 90.0));
         }
     }
 }
